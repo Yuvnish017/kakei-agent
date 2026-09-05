@@ -1,0 +1,1 @@
+"""Kakei Agent - personal spending analytics."""
