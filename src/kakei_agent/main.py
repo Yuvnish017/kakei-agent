@@ -1,8 +1,9 @@
 import argparse
 from pathlib import Path
+from decimal import Decimal
 
 from kakei_agent.ingest.pdf import extract_text_from_pdf
-from kakei_agent.ingest.rakuten_pdf import parse_rakuten_pdf
+from kakei_agent.ingest.rakuten_pdf import parse_rakuten_pdf, validate_transactions
 
 
 def main() -> None:
@@ -40,6 +41,28 @@ def main() -> None:
     )
 
     parse_parser.add_argument(
+        "pdf",
+        type=Path,
+        help="Path to the PDF statement",
+    )
+
+    inspect_parser = subparsers.add_parser(
+        "inspect",
+        help="Inspect parsed Rakuten transactions",
+    )
+
+    inspect_parser.add_argument(
+        "pdf",
+        type=Path,
+        help="Path to the PDF statement",
+    )
+
+    summary_parser = subparsers.add_parser(
+        "summary",
+        help="Summarize parsed Rakuten transactions",
+    )
+
+    summary_parser.add_argument(
         "pdf",
         type=Path,
         help="Path to the PDF statement",
@@ -113,6 +136,103 @@ def main() -> None:
                         print(
                             f"    {line}"
                         )
+
+    elif args.command == "inspect":
+
+        result = parse_rakuten_pdf(args.pdf)
+
+        print(
+            f"Statement month: "
+            f"{result.statement_month}"
+        )
+
+        print(
+            f"Statement amount: "
+            f"¥{result.statement_amount:,.0f}"
+        )
+
+        print(
+            f"Transactions: "
+            f"{len(result.transactions)}"
+        )
+
+        print()
+
+        for index, transaction in enumerate(
+                result.transactions,
+                start=1,
+        ):
+            print(
+                f"[{index:02d}] "
+                f"{transaction.transaction_date} | "
+                f"{transaction.merchant_raw} | "
+                f"{transaction.payment_method} | "
+                f"¥{transaction.transaction_amount:,.0f}"
+            )
+
+    elif args.command == "summary":
+
+        result = parse_rakuten_pdf(args.pdf)
+
+        transactions = result.transactions
+
+        total = sum(
+            (
+                t.transaction_amount
+                for t in transactions
+            ),
+            Decimal("0"),
+        )
+
+        payment_methods: dict[str, int] = {}
+
+        for transaction in transactions:
+            payment_methods[
+                transaction.payment_method
+            ] = (
+                    payment_methods.get(
+                        transaction.payment_method,
+                        0,
+                    ) + 1
+            )
+
+        print(
+            f"Statement month: "
+            f"{result.statement_month}"
+        )
+
+        print(
+            f"Statement amount: "
+            f"¥{result.statement_amount:,.0f}"
+        )
+
+        print(
+            f"Transactions: "
+            f"{len(transactions)}"
+        )
+
+        print(
+            f"Transaction total: "
+            f"¥{total:,.0f}"
+        )
+
+        print("\nPayment methods:")
+
+        for method, count in sorted(
+                payment_methods.items()
+        ):
+            print(
+                f"  {method}: {count}"
+            )
+
+        validation_warnings = (
+            validate_transactions(transactions)
+        )
+
+        print(
+            f"\nValidation warnings: "
+            f"{len(validation_warnings)}"
+        )
 
 
 if __name__ == "__main__":

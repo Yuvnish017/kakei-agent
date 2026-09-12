@@ -9,6 +9,9 @@ from kakei_agent.models import (
     RakutenParseWarning,
     RakutenTransaction,
 )
+from kakei_agent.normalize.merchant import (
+    normalize_merchant_name,
+)
 
 
 DATE_PATTERN = re.compile(r"^\d{4}/\d{2}/\d{2}$")
@@ -343,6 +346,9 @@ def parse_transaction_block(
     return RakutenTransaction(
         transaction_date=parse_date(transaction_date),
         merchant_raw=merchant,
+        merchant_normalized=normalize_merchant_name(
+            merchant
+        ),
         cardholder=cardholder,
         payment_method=payment_method,
         transaction_amount=parse_amount(
@@ -398,10 +404,18 @@ def parse_rakuten_pdf(
 
     reconciliation_warning = reconcile_transactions(result)
 
+    reconciliation_warning = reconcile_transactions(result)
+
     if reconciliation_warning:
         result.warnings.append(
             reconciliation_warning
         )
+
+    result.warnings.extend(
+        validate_transactions(
+            result.transactions
+        )
+    )
 
     return result
 
@@ -440,3 +454,106 @@ def reconcile_transactions(
         )
 
     return None
+
+
+def validate_transactions(
+    transactions: list[RakutenTransaction],
+) -> list[RakutenParseWarning]:
+    """
+    Perform structural validation on parsed transactions.
+
+    This does not determine whether a transaction is
+    financially correct. It only checks for suspicious
+    structures that deserve inspection.
+    """
+
+    warnings: list[RakutenParseWarning] = []
+
+    for index, transaction in enumerate(
+        transactions,
+        start=1,
+    ):
+        # -----------------------------------------------------
+        # Check basic amount relationship.
+        # -----------------------------------------------------
+
+        expected_total = (
+            transaction.transaction_amount
+            + transaction.fee_or_interest
+        )
+
+        if expected_total != transaction.total_amount:
+            warnings.append(
+                RakutenParseWarning(
+                    message=(
+                        f"Transaction #{index}: "
+                        "transaction amount + fee does not "
+                        "equal total amount."
+                    ),
+                    context=(
+                        transaction.merchant_raw,
+                    ),
+                )
+            )
+
+        # -----------------------------------------------------
+        # Check billed amount.
+        # -----------------------------------------------------
+
+        if transaction.billed_amount > transaction.total_amount:
+            warnings.append(
+                RakutenParseWarning(
+                    message=(
+                        f"Transaction #{index}: "
+                        "billed amount is greater than "
+                        "total amount."
+                    ),
+                    context=(
+                        transaction.merchant_raw,
+                    ),
+                )
+            )
+
+        # -----------------------------------------------------
+        # Check negative values.
+        #
+        # Our current parser doesn't support negative values
+        # yet, so this is mostly defensive.
+        # -----------------------------------------------------
+
+        monetary_fields = {
+            "transaction_amount": (
+                transaction.transaction_amount
+            ),
+            "fee_or_interest": (
+                transaction.fee_or_interest
+            ),
+            "total_amount": (
+                transaction.total_amount
+            ),
+            "billed_amount": (
+                transaction.billed_amount
+            ),
+            "carried_forward_balance": (
+                transaction.carried_forward_balance
+            ),
+            "current_payment": (
+                transaction.current_payment
+            ),
+        }
+
+        for field_name, value in monetary_fields.items():
+            if value < 0:
+                warnings.append(
+                    RakutenParseWarning(
+                        message=(
+                            f"Transaction #{index}: "
+                            f"{field_name} is negative."
+                        ),
+                        context=(
+                            transaction.merchant_raw,
+                        ),
+                    )
+                )
+
+    return warnings

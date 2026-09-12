@@ -6,7 +6,16 @@ from decimal import Decimal
 @dataclass(frozen=True)
 class RakutenTransaction:
     transaction_date: date
+
+    # Original value exactly as extracted from the PDF.
     merchant_raw: str
+
+    # Cleaned merchant name.
+    #
+    # This is deliberately separate from merchant_raw so
+    # the original PDF value is always preserved.
+    merchant_normalized: str
+
     cardholder: str
     payment_method: str
 
@@ -16,6 +25,14 @@ class RakutenTransaction:
     billed_amount: Decimal
     carried_forward_balance: Decimal
     current_payment: Decimal
+
+    # Additional information associated with the transaction.
+    #
+    # This will be useful for foreign transactions and other
+    # Rakuten-specific metadata.
+    metadata: dict[str, str] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)

@@ -115,6 +115,11 @@ def test_first_transaction():
     )
 
     assert (
+            first.merchant_normalized
+            == "GPモバイルパスモチヤ-ジ"
+    )
+
+    assert (
         first.transaction_amount
         == Decimal("5000")
     )
